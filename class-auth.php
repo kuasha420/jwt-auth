@@ -147,6 +147,7 @@ class Auth {
 		$username    = $request->get_param('username');
 		$password    = $request->get_param('password');
 		$custom_auth = $request->get_param('custom_auth');
+		$device = $request->get_param('device');
 
 		// First thing, check the secret key if not exist return a error.
 		if (!$secret_key) {
@@ -181,7 +182,7 @@ class Auth {
 		}
 
 		// Valid credentials, the user exists, let's generate the token.
-		return $this->generate_token($user, false);
+		return $this->generate_token($user, false, $device);
 	}
 
 	/**
@@ -192,7 +193,7 @@ class Auth {
 	 *
 	 * @return WP_REST_Response|string Return as raw token string or as a formatted WP_REST_Response.
 	 */
-	public function generate_token($user, $return_raw = true) {
+	public function generate_token($user, $return_raw = true, $device) {
 		$secret_key = defined('JWT_AUTH_SECRET_KEY') ? JWT_AUTH_SECRET_KEY : false;
 		$issued_at  = time();
 		$not_before = $issued_at;
@@ -215,7 +216,7 @@ class Auth {
 		$alg = $this->get_alg();
 
 		// Let the user modify the token data before the sign.
-		$token = JWT::encode(apply_filters('jwt_auth_payload', $payload, $user), $secret_key, $alg);
+		$token = JWT::encode(apply_filters('jwt_auth_payload', $payload, $user, $device), $secret_key, $alg);
 
 		// If return as raw token string.
 		if ($return_raw) {

@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Devices JWT-Auth.
  *
@@ -18,17 +19,17 @@ class Devices {
 	 */
 	public function __construct() {
 
-		add_action( 'show_user_profile', array( $this, 'custom_user_profile_fields' ), 10, 1 );
-		add_action( 'edit_user_profile', array( $this, 'custom_user_profile_fields' ), 10, 1 );
+		add_action('show_user_profile', array($this, 'custom_user_profile_fields'), 10, 1);
+		add_action('edit_user_profile', array($this, 'custom_user_profile_fields'), 10, 1);
 
-		add_action( 'wp_ajax_remove_device', array( $this, 'remove_device' ) );
-		add_shortcode( 'jwt_auth_devices', array( $this, 'shortcode_jwt_auth_devices' ) );
+		add_action('wp_ajax_remove_device', array($this, 'remove_device'));
+		add_shortcode('jwt_auth_devices', array($this, 'shortcode_jwt_auth_devices'));
 
-		add_action( 'profile_update', array( $this, 'profile_update' ), 10, 2 );
-		add_action( 'after_password_reset', array( $this, 'after_password_reset' ), 10, 2 );
+		add_action('profile_update', array($this, 'profile_update'), 10, 2);
+		add_action('after_password_reset', array($this, 'after_password_reset'), 10, 2);
 
-		add_filter( 'jwt_auth_payload', array( $this, 'jwt_auth_payload' ), 10, 2 );
-		add_filter( 'jwt_auth_extra_token_check', array( $this, 'check_device_and_pass' ), 10, 4 );
+		add_filter('jwt_auth_payload', array($this, 'jwt_auth_payload'), 10, 3);
+		add_filter('jwt_auth_extra_token_check', array($this, 'check_device_and_pass'), 10, 4);
 	}
 
 	/**
@@ -39,34 +40,38 @@ class Devices {
 	 *
 	 * @return array $payload The modified token's payload.
 	 */
-	public function jwt_auth_payload( $payload, $user ) {
+	public function jwt_auth_payload($payload, $user, $device) {
 
-		$current_device = isset( $_POST['device'] ) ? $this->sanitize_device_name( sanitize_text_field( $_POST['device'] ) ) : ''; // phpcs:ignore
-
+		$current_device = !empty($device) ? $this->sanitize_device_name(sanitize_text_field($device)) : ''; // phpcs:ignore
 		// Add device identyfier in user meta if parameter was passed.
 		// TODO: considering to use $_SERVER['HTTP_USER_AGENT'] as default value for device in case it is empty.
-		if ( ! empty( $current_device ) ) {
-			$all_devices = get_user_meta( $user->ID, 'jwt_auth_device', false );
+		if (!empty($current_device)) {
+			$all_devices = get_user_meta($user->ID, 'jwt_auth_device', false);
 
-			if ( empty( $all_devices ) || ! in_array( $current_device, $all_devices, true ) ) {
+			if (empty($all_devices) || !in_array($current_device, $all_devices, true)) {
 				$data = array(
-					'agent'     => isset( $_SERVER['HTTP_USER_AGENT'] ) ? sanitize_text_field( $_SERVER['HTTP_USER_AGENT'] ) : '', // phpcs:ignore
-					'date'      => date( 'Y-m-d H:i:s', current_time( 'timestamp', 0 ) ),
+					'agent'     => isset($_SERVER['HTTP_USER_AGENT']) ? sanitize_text_field($_SERVER['HTTP_USER_AGENT']) : '', // phpcs:ignore
+					'date'      => date('Y-m-d H:i:s', current_time('timestamp', 0)),
 					'is_mobile' => wp_is_mobile(),
 				);
 
-				add_user_meta( $user->ID, 'jwt_auth_device', $current_device, false );
-				add_user_meta( $user->ID, $this->sanitize_device_key( $current_device ), $data, true );
+				add_user_meta($user->ID, 'jwt_auth_device', $current_device, false);
+				add_user_meta($user->ID, $this->sanitize_device_key($current_device), $data, true);
 			}
 		}
 
 		// Add a pass if user doesn't have yet.
-		$pass = get_user_meta( $user->ID, 'jwt_auth_pass', true );
-		$pass = ( empty( $pass ) ) ? $this->refresh_pass( $user->ID ) : $pass;
-		$pass = apply_filters( 'jwt_auth_pass', $pass );
+		$pass = get_user_meta($user->ID, 'jwt_auth_pass', true);
+		$pass = (empty($pass)) ? $this->refresh_pass($user->ID) : $pass;
+		$pass = apply_filters('jwt_auth_pass', $pass);
 
-		$payload['data']['user']['device'] = $current_device;
-		$payload['data']['user']['pass']   = $pass;
+		if (!empty($current_device)) {
+			$payload['data']['user']['device'] = $current_device;
+		}
+
+		if (!empty($pass)) {
+			$payload['data']['user']['pass']   = $pass;
+		}
 
 		return $payload;
 	}
@@ -81,22 +86,22 @@ class Devices {
 	 *
 	 * @return string The error message if failed, empty string if it passes.
 	 */
-	public function check_device_and_pass( $error_msg, $user, $token, $payload ) {
+	public function check_device_and_pass($error_msg, $user, $token, $payload) {
 
 		// Check if token has device filled.
-		if ( ! empty( $payload->data->user->device ) ) {
+		if (!empty($payload->data->user->device)) {
 
-			$all_devices = get_user_meta( $user->ID, 'jwt_auth_device', false );
+			$all_devices = get_user_meta($user->ID, 'jwt_auth_device', false);
 
-			if ( ! is_array( $all_devices ) || ! in_array( $payload->data->user->device, $all_devices, true ) ) {
+			if (!is_array($all_devices) || !in_array($payload->data->user->device, $all_devices, true)) {
 				return 'device unnabled';
 			}
 		}
 
 		// Check if user changed the password.
-		$pass = get_user_meta( $user->ID, 'jwt_auth_pass', true );
+		$pass = get_user_meta($user->ID, 'jwt_auth_pass', true);
 
-		if ( $payload->data->user->pass !== $pass ) {
+		if ($payload->data->user->pass !== $pass) {
 			return 'password changed';
 		}
 
@@ -109,7 +114,7 @@ class Devices {
 	 * @param string $device The device name.
 	 * @return string The sanitized device name.
 	 */
-	private function sanitize_device_name( $device ) {
+	private function sanitize_device_name($device) {
 
 		$unwanted_chars = array(
 			'Š' => 'S',
@@ -178,8 +183,8 @@ class Devices {
 			'ÿ' => 'y',
 		);
 
-		$device = strtr( $device, $unwanted_chars );
-		$device = preg_replace( '/[^a-z0-9 ]/i', '', $device );
+		$device = strtr($device, $unwanted_chars);
+		$device = preg_replace('/[^a-z0-9 ]/i', '', $device);
 
 		return $device;
 	}
@@ -190,8 +195,8 @@ class Devices {
 	 * @param string $key The device key.
 	 * @return string The sanitized device key.
 	 */
-	private function sanitize_device_key( $key ) {
-		return 'jwt_auth_device_' . str_replace( ' ', '_', $this->sanitize_device_name( $key ) );
+	private function sanitize_device_key($key) {
+		return 'jwt_auth_device_' . str_replace(' ', '_', $this->sanitize_device_name($key));
 	}
 
 	/**
@@ -202,13 +207,13 @@ class Devices {
 	 * @param int     $user_id       User ID.
 	 * @param WP_User $old_user_data Object containing user's data prior to update.
 	 */
-	public function profile_update( $user_id, $old_user_data ) {
+	public function profile_update($user_id, $old_user_data) {
 
-		$user = get_user_by( 'id', $user_id );
+		$user = get_user_by('id', $user_id);
 
-		if ( $user->user_pass !== $old_user_data->user_pass ) {
+		if ($user->user_pass !== $old_user_data->user_pass) {
 
-			$this->block_all_tokens( $user_id );
+			$this->block_all_tokens($user_id);
 		}
 	}
 
@@ -220,9 +225,9 @@ class Devices {
 	 * @param WP_User $user     The user.
 	 * @param string  $new_pass New user password.
 	 */
-	public function after_password_reset( $user, $new_pass ) {
+	public function after_password_reset($user, $new_pass) {
 
-		$this->block_all_tokens( $user->ID );
+		$this->block_all_tokens($user->ID);
 	}
 
 	/**
@@ -230,10 +235,10 @@ class Devices {
 	 *
 	 * @param int $user_id The user id.
 	 */
-	private function block_all_tokens( $user_id ) {
+	private function block_all_tokens($user_id) {
 
 		// Clear devices list with access.
-		delete_user_meta( $user_id, 'jwt_auth_device' );
+		delete_user_meta($user_id, 'jwt_auth_device');
 
 		global $wpdb;
 
@@ -247,7 +252,7 @@ class Devices {
 		);
 
 		// Add a hash for the new password.
-		$this->refresh_pass( $user_id );
+		$this->refresh_pass($user_id);
 	}
 
 	/**
@@ -255,8 +260,8 @@ class Devices {
 	 *
 	 * @param int $user_id The user id.
 	 */
-	private function refresh_pass( $user_id ) {
-		update_user_meta( $user_id, 'jwt_auth_pass', (string) md5( uniqid( wp_rand(), true ) ) );
+	private function refresh_pass($user_id) {
+		update_user_meta($user_id, 'jwt_auth_pass', (string) md5(uniqid(wp_rand(), true)));
 	}
 
 	// -------------------------------------------------------------------------------------------------------
@@ -268,24 +273,24 @@ class Devices {
 
 		// TODO: nonce verification.
 
-		$device  = isset( $_POST['device'] ) ? sanitize_text_field( $_POST['device'] ) : ''; // phpcs:ignore
-		$user_id = isset( $_POST['user_id'] ) && is_numeric( $_POST['user_id'] ) ? absint( $_POST['user_id'] ) : 0; // phpcs:ignore
+		$device  = isset($_POST['device']) ? sanitize_text_field($_POST['device']) : ''; // phpcs:ignore
+		$user_id = isset($_POST['user_id']) && is_numeric($_POST['user_id']) ? absint($_POST['user_id']) : 0; // phpcs:ignore
 
 		// Set current user to superadmin with permission to perform changes.
 		$current_user_id = get_current_user_id();
 
 		// ? Would this work even if there's no user with ID 1?
-		wp_set_current_user( 1 );
+		wp_set_current_user(1);
 
-		if ( delete_user_meta( $user_id, 'jwt_auth_device', $device ) ) {
-			delete_user_meta( $user_id, $this->sanitize_device_key( $device ) );
+		if (delete_user_meta($user_id, 'jwt_auth_device', $device)) {
+			delete_user_meta($user_id, $this->sanitize_device_key($device));
 			wp_send_json_success();
 		} else {
 			wp_send_json_error();
 		}
 
 		// Go back to the last user.
-		wp_set_current_user( $current_user_id );
+		wp_set_current_user($current_user_id);
 
 		wp_die();
 	}
@@ -295,25 +300,25 @@ class Devices {
 	 *
 	 * @param WP_User $profileuser The current WP_User object.
 	 */
-	public function custom_user_profile_fields( $profileuser ) {
+	public function custom_user_profile_fields($profileuser) {
 
 		// If is current user's profile (profile.php).
-		if ( defined( 'IS_PROFILE_PAGE' ) && IS_PROFILE_PAGE ) {
+		if (defined('IS_PROFILE_PAGE') && IS_PROFILE_PAGE) {
 			$user_id = get_current_user_id();
-		} elseif ( ! empty( $_GET['user_id'] ) && is_numeric( $_GET['user_id'] ) ) { // phpcs:ignore
+		} elseif (!empty($_GET['user_id']) && is_numeric($_GET['user_id'])) { // phpcs:ignore
 			// If is another user's profile page.
-			$user_id = absint( $_GET['user_id'] ); // phpcs:ignore
+			$user_id = absint($_GET['user_id']); // phpcs:ignore
 		} else {
 			// Otherwise something is wrong.
-			die( 'No user id defined.' );
+			die('No user id defined.');
 		}
 
-		?>
-		<h2><?php echo __( 'Connected Devices', 'jwt-auth' ); ?></h2>
+?>
+		<h2><?php echo __('Connected Devices', 'jwt-auth'); ?></h2>
 		<div id="jwt_auth_devices" style="width:33%">
-			<?php echo do_shortcode( '[jwt_auth_devices user_id=' . $user_id . ']' ); ?>
+			<?php echo do_shortcode('[jwt_auth_devices user_id=' . $user_id . ']'); ?>
 		</div>
-		<?php
+	<?php
 
 	}
 
@@ -322,9 +327,9 @@ class Devices {
 	 *
 	 * @param array $atts The shortcode attributes.
 	 */
-	public function shortcode_jwt_auth_devices( $atts ) {
+	public function shortcode_jwt_auth_devices($atts) {
 
-		if ( ! is_admin() ) {
+		if (!is_admin()) {
 			return '';
 		}
 
@@ -336,138 +341,152 @@ class Devices {
 			'jwt_auth_devices'
 		);
 
-		$user_id = absint( $atts['user_id'] );
+		$user_id = absint($atts['user_id']);
 
-		if ( get_current_user_id() !== $user_id ) {
-			if ( ! current_user_can( 'administrator' ) ) {
+		if (get_current_user_id() !== $user_id) {
+			if (!current_user_can('administrator')) {
 				return '';
 			}
 		}
 
-		$devices = get_user_meta( $user_id, 'jwt_auth_device', false );
+		$devices = get_user_meta($user_id, 'jwt_auth_device', false);
 
-		if ( count( $devices ) === 0 ) {
-			return '<p>' . __( 'You have no devices connected', 'jwt-auth' ) . '</p>';
+		if (count($devices) === 0) {
+			return '<p>' . __('You have no devices connected', 'jwt-auth') . '</p>';
 		}
 
 		ob_start();
-		?>
+	?>
 
 		<style>
-		.device_area {margin: 0 -5px;}
-		.device_area:after {
-			content: "";
-			display: table;
-			clear: both;
-		}
-		.device_column {
-			float: left;
-			width: 200px;
-			padding: 10px 10px;
-			box-sizing: border-box;
-		}
-		.device_card {
-			box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2);
-			padding: 16px;
-			text-align: center;
-			background-color: #f1f1f1;
-		}
-		.device_title {
-			font-size:1vw;
-		}
-		.device_date {
-			font-size:0.7vw;
-		}
-		.device_agent {
-			font-size:0.5vw;
-		}
+			.device_area {
+				margin: 0 -5px;
+			}
+
+			.device_area:after {
+				content: "";
+				display: table;
+				clear: both;
+			}
+
+			.device_column {
+				float: left;
+				width: 200px;
+				padding: 10px 10px;
+				box-sizing: border-box;
+			}
+
+			.device_card {
+				box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2);
+				padding: 16px;
+				text-align: center;
+				background-color: #f1f1f1;
+			}
+
+			.device_title {
+				font-size: 1vw;
+			}
+
+			.device_date {
+				font-size: 0.7vw;
+			}
+
+			.device_agent {
+				font-size: 0.5vw;
+			}
 		</style>
 
 		<script type="text/javascript">
-		function jwt_auth_remove_device(user_id, device_name, index) {
+			function jwt_auth_remove_device(user_id, device_name, index) {
 
-			if (confirm('Are you sure you want to remove this device access?')) {
+				if (confirm('Are you sure you want to remove this device access?')) {
 
-				var totalDevices = <?php echo count( $devices ); ?>;
+					var totalDevices = <?php echo count($devices); ?>;
 
-				for (var i=0; i < totalDevices; i++) {
-					var btn = document.getElementById("jwt_auth_remove_button-"+i);
-					if(btn!=null) { btn.disabled=true; }
-				}
-
-				var data = {
-					'action': 'remove_device',
-					'user_id': user_id,
-					'device': device_name,
-				};
-
-				jQuery.post(ajaxurl, data, function(response) {
-
-					if (response['success'] == true) {
-
-						var elem = document.getElementById("jwt_auth_device-"+index);
-						elem.parentNode.removeChild(elem);
-
-						for(var i=0; i < totalDevices; i++){
-							var btn = document.getElementById("jwt_auth_remove_button-"+i);
-							if(btn!=null) { btn.disabled=false; }
-						}						
-
-					} else {
-
-						alert("<?php echo __( "Ops... device couldn't be removed!", 'jwt-auth' ); ?>");						
+					for (var i = 0; i < totalDevices; i++) {
+						var btn = document.getElementById("jwt_auth_remove_button-" + i);
+						if (btn != null) {
+							btn.disabled = true;
+						}
 					}
 
-				});
+					var data = {
+						'action': 'remove_device',
+						'user_id': user_id,
+						'device': device_name,
+					};
+
+					jQuery.post(ajaxurl, data, function(response) {
+
+						if (response['success'] == true) {
+
+							var elem = document.getElementById("jwt_auth_device-" + index);
+							elem.parentNode.removeChild(elem);
+
+							for (var i = 0; i < totalDevices; i++) {
+								var btn = document.getElementById("jwt_auth_remove_button-" + i);
+								if (btn != null) {
+									btn.disabled = false;
+								}
+							}
+
+						} else {
+
+							alert("<?php echo __("Ops... device couldn't be removed!", 'jwt-auth'); ?>");
+						}
+
+					});
+				}
 			}
-		}
 		</script>
 
-		<div id="jwt_auth_devices" class="device_area">	
+		<div id="jwt_auth_devices" class="device_area">
 
 			<?php
 			$line = false;
 
-			$total_devices = count( $devices );
+			$total_devices = count($devices);
 
-			for ( $i = 0; $i < $total_devices; ++$i ) {
+			for ($i = 0; $i < $total_devices; ++$i) {
 
-				$device      = $devices[ $i ];
-				$title       = preg_replace( '/(\S{15})(?=\S)/', '$1 ', $device );
-				$title       = ( strlen( $title ) > 30 ) ? substr( $title, 0, 27 ) . '...' : $title;
-				$device_data = (array) get_user_meta( $user_id, $this->sanitize_device_key( $device ), true );
-				$icon        = ( $device_data['is_mobile'] ) ? 'dashicons-smartphone' : 'dashicons-laptop';
+				$device      = $devices[$i];
+				$title       = preg_replace('/(\S{15})(?=\S)/', '$1 ', $device);
+				$title       = (strlen($title) > 30) ? substr($title, 0, 27) . '...' : $title;
+				$device_data = (array) get_user_meta($user_id, $this->sanitize_device_key($device), true);
+				$icon        = ($device_data['is_mobile']) ? 'dashicons-smartphone' : 'dashicons-laptop';
 				$date        = $device_data['date'];
 				$agent       = $device_data['agent'];
-				$agent       = preg_replace( '/(\S{15})(?=\S)/', '$1 ', $agent );
+				$agent       = preg_replace('/(\S{15})(?=\S)/', '$1 ', $agent);
 
-				?>
+			?>
 
-				<div class="device_column" id="jwt_auth_device-<?php echo esc_attr( $i ); ?>">
+				<div class="device_column" id="jwt_auth_device-<?php echo esc_attr($i); ?>">
 					<div class="device_card">
-						<span class="dashicons <?php echo esc_attr( $icon ); ?>" style="font-size:28px; color:grey;" ></span>
-						<p class="device_title"><h3><?php echo esc_html( $title ); ?></h3></p>
-						<p class="device_date"><?php echo esc_html( $date ); ?></p>
-						<p class="device_agent"><?php echo esc_html( $agent ); ?></p>
+						<span class="dashicons <?php echo esc_attr($icon); ?>" style="font-size:28px; color:grey;"></span>
+						<p class="device_title">
+						<h3><?php echo esc_html($title); ?></h3>
+						</p>
+						<p class="device_date"><?php echo esc_html($date); ?></p>
+						<p class="device_agent"><?php echo esc_html($agent); ?></p>
 
 						<?php
 						echo '
-							<input id="jwt_auth_remove_button-' . esc_attr( $i ) .
+							<input id="jwt_auth_remove_button-' . esc_attr($i) .
 							'" class="button wp-generate-pw' .
-							'" type="button" value="' . __( 'Remove', 'jwt-auth' ) .
-							'" onclick="jwt_auth_remove_device(\'' . esc_attr( $user_id ) . '\',\'' . esc_attr( $device ) . '\',\'' . esc_attr( $i ) . '\' )" />
+							'" type="button" value="' . __('Remove', 'jwt-auth') .
+							'" onclick="jwt_auth_remove_device(\'' . esc_attr($user_id) . '\',\'' . esc_attr($device) . '\',\'' . esc_attr($i) . '\' )" />
 						';
 						?>
 					</div>
 				</div>
-				<?php
+			<?php
 			}
 			?>
 
-		</div>		
+		</div>
 		</br>
 
-		<?php
+<?php
 
 		return ob_get_clean();
 	}
